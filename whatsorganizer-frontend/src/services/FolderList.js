@@ -1,6 +1,5 @@
-// src/components/FolderList.js
 import React, { useState, useEffect } from 'react';
-import { fetchFolders } from './api';
+import { fetchFolders } from '../services/api';
 
 const FolderList = () => {
     const [folders, setFolders] = useState([]);
@@ -26,3 +25,6 @@ const FolderList = () => {
 };
 
 export default FolderList;
+
+
+
