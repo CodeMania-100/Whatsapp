@@ -10,12 +10,15 @@ class ConversationDocument(Document):
 
     class Index:
         name = 'conversations'
+        settings = {'number_of_shards': 1, 'number_of_replicas': 0}
 
     class Django:
         model = Conversation
         fields = [
+            'id',
             'title',
             'content',
-            'created_at',
-            'updated_at',
         ]
+
+    def prepare_folder(self, instance):
+        return {'name': instance.folder.name} if instance.folder else None
