@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
 import { searchConversations } from './api';
 
+const highlightText = (text, highlight) => {
+    const parts = text.split(new RegExp(`(${highlight})`, 'gi'));
+    return parts.map((part, index) => 
+      part.toLowerCase() === highlight.toLowerCase() 
+        ? <mark key={index}>{part}</mark> 
+        : part
+    );
+  };
+
 const SearchBar = () => {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState({});
@@ -21,57 +30,58 @@ const SearchBar = () => {
 
     return (
         <div>
-            <form onSubmit={handleSearch}>
-                <input
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search..."
-                />
-                <button type="submit">Search</button>
-            </form>
-            {error && <p>{error}</p>}
-            {Object.keys(results).length > 0 ? (
+          <form onSubmit={handleSearch}>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search..."
+            />
+            <button type="submit">Search</button>
+          </form>
+          {error && <p>{error}</p>}
+          {Object.keys(results).length > 0 ? (
+            <div>
+              {results.conversations && results.conversations.length > 0 && (
                 <div>
-                    {results.conversations && results.conversations.length > 0 && (
-                        <div>
-                            <h2>Conversations</h2>
-                            <ul>
-                                {results.conversations.map((conversation) => (
-                                    <li key={conversation.id}>
-                                        <h3>{conversation.title}</h3>
-                                        <p>{conversation.content}</p>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
-                    {results.folders && results.folders.length > 0 && (
-                        <div>
-                            <h2>Folders</h2>
-                            <ul>
-                                {results.folders.map((folder) => (
-                                    <li key={folder.id}>{folder.name}</li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
-                    {results.groups && results.groups.length > 0 && (
-                        <div>
-                            <h2>Groups</h2>
-                            <ul>
-                                {results.groups.map((group) => (
-                                    <li key={group.id}>{group.name}</li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
+                  <h2>Conversations</h2>
+                  <ul>
+                    {results.conversations.map((conversation) => (
+                      <li key={conversation.id}>
+                        <h3>{highlightText(conversation.title, query)}</h3>
+                        <p>{highlightText(conversation.content, query)}</p>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-            ) : (
-                <p>No results found.</p>
-            )}
+              )}
+              {/* Similar changes for folders and groups if needed */}
+              {results.folders && results.folders.length > 0 && (
+                <div>
+                  <h2>Folders</h2>
+                  <ul>
+                    {results.folders.map((folder) => (
+                      <li key={folder.id}>{highlightText(folder.name, query)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {results.groups && results.groups.length > 0 && (
+                <div>
+                  <h2>Groups</h2>
+                  <ul>
+                    {results.groups.map((group) => (
+                      <li key={group.id}>{highlightText(group.name, query)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p>No results found.</p>
+          )}
         </div>
-    );
-};
-
-export default SearchBar;
+      );
+    };
+    
+    export default SearchBar;

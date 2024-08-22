@@ -54,3 +54,8 @@
 .navigation-buttons button:hover {
   background-color: #e0e0e0;
 }
+
+mark {
+  background-color: yellow;
+  padding: 0 2px;
+}

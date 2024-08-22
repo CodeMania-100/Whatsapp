@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Folder, Conversation, Document, Group
+from .models import Folder, Conversation, Document, Group, WhatsAppUser, WhatsAppGroup, WhatsAppMessage, UserWhatsAppData
 import bleach
 
 class GroupSerializer(serializers.ModelSerializer):
@@ -24,13 +24,48 @@ class DocumentSerializer(serializers.ModelSerializer):
         fields = ['id', 'title', 'file', 'conversation', 'uploaded_at']
         read_only_fields = ['id', 'uploaded_at']
 
+
+    
+class WhatsAppUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WhatsAppUser
+        fields = ['id', 'name', 'phone_number']
+
+class WhatsAppGroupSerializer(serializers.ModelSerializer):
+    members = WhatsAppUserSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = WhatsAppGroup
+        fields = ['id', 'name', 'members']
+
+class WhatsAppMessageSerializer(serializers.ModelSerializer):
+    sender = WhatsAppUserSerializer(read_only=True)
+    group = WhatsAppGroupSerializer(read_only=True)
+
+    class Meta:
+        model = WhatsAppMessage
+        fields = ['id', 'sender', 'group', 'content', 'timestamp']
+
+    def validate_content(self, value):
+        return bleach.clean(value, tags=['p', 'br', 'strong', 'em'], strip=True)
+
+class UserWhatsAppDataSerializer(serializers.ModelSerializer):
+    whatsapp_users = WhatsAppUserSerializer(many=True, read_only=True)
+    whatsapp_groups = WhatsAppGroupSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = UserWhatsAppData
+        fields = ['id', 'user', 'whatsapp_users', 'whatsapp_groups']
+
 class ConversationSerializer(serializers.ModelSerializer):
     documents = DocumentSerializer(many=True, read_only=True)
+    whatsapp_group = WhatsAppGroupSerializer(read_only=True)
 
     class Meta:
         model = Conversation
-        fields = ['id', 'title', 'content', 'folder', 'created_at', 'updated_at', 'documents']
+        fields = ['id', 'title', 'content', 'folder', 'created_at', 'updated_at', 'documents', 'whatsapp_group']
         read_only_fields = ['id', 'created_at', 'updated_at']
+
 
     def update(self, instance, validated_data):
         instance.title = validated_data.get('title', instance.title)

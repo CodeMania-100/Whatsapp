@@ -2,25 +2,20 @@ from django.shortcuts import render, get_object_or_404
 from django.views.decorators.cache import cache_page
 from django.utils.decorators import method_decorator
 from rest_framework import viewsets, status
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.pagination import PageNumberPagination
 from django_elasticsearch_dsl.search import Search
-from .models import Folder, Conversation, Document, Group
-from .serializers import FolderSerializer, ConversationSerializer, DocumentSerializer, GroupSerializer
-from .documents import ConversationDocument
+from .models import Folder, Conversation, Document, Group, WhatsAppUser, WhatsAppGroup, WhatsAppMessage, UserWhatsAppData
+from .serializers import FolderSerializer, ConversationSerializer, DocumentSerializer, GroupSerializer, WhatsAppUserSerializer, WhatsAppGroupSerializer, WhatsAppMessageSerializer, UserWhatsAppDataSerializer
 import logging
 from rest_framework.authentication import TokenAuthentication, SessionAuthentication
-#from transformers import pipeline
 from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
-from rest_framework import viewsets, status
 from .elasticsearch_client import get_elasticsearch_client
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from .mixins import LoggingMixin
-from django.http import JsonResponse
 from django.db.models import Q
 #qa_pipeline = pipeline("question-answering", model="distilbert-base-cased-distilled-squad")
 # Load the spaCy model
@@ -180,18 +175,23 @@ class ConversationViewSet(viewsets.ModelViewSet):
             )
             folders = Folder.objects.filter(name__icontains=query)
             groups = Group.objects.filter(name__icontains=query)
+            whatsapp_messages = WhatsAppMessage.objects.filter(
+                Q(content__icontains=query) | Q(sender__name__icontains=query) | Q(group__name__icontains=query)
+            )
 
             conversation_results = ConversationSerializer(conversations, many=True).data
             folder_results = FolderSerializer(folders, many=True).data
             group_results = GroupSerializer(groups, many=True, context={'request': request}).data
+            whatsapp_results = WhatsAppMessageSerializer(whatsapp_messages, many=True).data
 
             all_results = {
                 'conversations': conversation_results,
                 'folders': folder_results,
-                'groups': group_results
+                'groups': group_results,
+                'whatsapp_messages': whatsapp_results
             }
 
-            total_hits = len(conversation_results) + len(folder_results) + len(group_results)
+            total_hits = len(conversation_results) + len(folder_results) + len(group_results) + len(whatsapp_results)
 
             logger.info(f"Search query: {query}")
             logger.info(f"Found {total_hits} results")
@@ -205,15 +205,6 @@ class ConversationViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"An error occurred during search: {str(e)}", exc_info=True)
             return JsonResponse({"error": str(e), "results": [], "total_hits": 0}, status=500)
-        
-    def serialize_result(self, hit):
-        return {
-            'id': hit['_id'],
-            'title': hit['_source'].get('title'),
-            'content': hit['_source'].get('content'),
-            'folder': hit['_source'].get('folder', {}).get('name'),
-            'score': hit['_score']
-        }
 
 
     @method_decorator(cache_page(60 * 15))  # Cache for 15 minutes
@@ -223,3 +214,73 @@ class ConversationViewSet(viewsets.ModelViewSet):
     @method_decorator(cache_page(60 * 15))
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
+    
+class WhatsAppUserViewSet(viewsets.ModelViewSet):
+    queryset = WhatsAppUser.objects.all()
+    serializer_class = WhatsAppUserSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [TokenAuthentication, SessionAuthentication]
+
+    def get_queryset(self):
+        return WhatsAppUser.objects.filter(userwhatsappdata__user=self.request.user)
+
+class WhatsAppGroupViewSet(viewsets.ModelViewSet):
+    queryset = WhatsAppGroup.objects.all()
+    serializer_class = WhatsAppGroupSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [TokenAuthentication, SessionAuthentication]
+
+    def get_queryset(self):
+        return WhatsAppGroup.objects.filter(userwhatsappdata__user=self.request.user)
+
+class WhatsAppMessageViewSet(viewsets.ModelViewSet):
+    queryset = WhatsAppMessage.objects.all()
+    serializer_class = WhatsAppMessageSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [TokenAuthentication, SessionAuthentication]
+
+    def get_queryset(self):
+        return WhatsAppMessage.objects.filter(group__userwhatsappdata__user=self.request.user)
+
+class UserWhatsAppDataViewSet(viewsets.ModelViewSet):
+    queryset = UserWhatsAppData.objects.all()
+    serializer_class = UserWhatsAppDataSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [TokenAuthentication, SessionAuthentication]
+
+    def get_queryset(self):
+        return UserWhatsAppData.objects.filter(user=self.request.user)
+    
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def import_whatsapp_data(request):
+    try:
+        # This is a placeholder for the actual import logic
+        # You'll need to implement the parsing of WhatsApp export files here
+        user_data, created = UserWhatsAppData.objects.get_or_create(user=request.user)
+        
+        # Assume request.data contains parsed WhatsApp data
+        for user_data in request.data.get('users', []):
+            whatsapp_user, _ = WhatsAppUser.objects.get_or_create(
+                phone_number=user_data['phone_number'],
+                defaults={'name': user_data['name']}
+            )
+            user_data.whatsapp_users.add(whatsapp_user)
+
+        for group_data in request.data.get('groups', []):
+            whatsapp_group, _ = WhatsAppGroup.objects.get_or_create(name=group_data['name'])
+            user_data.whatsapp_groups.add(whatsapp_group)
+            
+            for message_data in group_data.get('messages', []):
+                WhatsAppMessage.objects.create(
+                    sender=WhatsAppUser.objects.get(phone_number=message_data['sender']),
+                    group=whatsapp_group,
+                    content=message_data['content'],
+                    timestamp=message_data['timestamp']
+                )
+
+        return JsonResponse({"status": "success", "message": "WhatsApp data imported successfully"})
+    except Exception as e:
+        logger.error(f"Error importing WhatsApp data: {str(e)}", exc_info=True)
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
